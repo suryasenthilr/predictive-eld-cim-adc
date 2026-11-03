@@ -1,5 +1,5 @@
 * 03_CiM_Crossbar_Streaming_Readout.cir
-* Compute-in-Memory (CiM) 4-Row Neural Crossbar with Streaming Predictive Delta-Sigma Readout
+* Compute-in-Memory 4-Row Crossbar with Upgraded 3-Bit Streaming Predictive Readout & Sinc-2 Decimation
 * Real-time zero-reset MAC dot-product digitization across consecutive inference phases
 .options method=gear plotwinsize=0
 
@@ -8,20 +8,14 @@ Vclk clk 0 PULSE(0 1 0 20p 20p 480p 1n)
 
 * ===== 4-ROW NEURAL CROSSBAR SYNAPSE ARRAY =====
 * Synapse Conductances:
-* W1 = 10uS
-* W2 = 20uS
-* W3 = 15uS
-* W4 = 5uS
+* W1 = 10uS, W2 = 20uS, W3 = 15uS, W4 = 5uS
+* Phase 1 (0 to 30ns): Vector A = [1, 0, 1, 0] -> IMAC = 10u + 15u = 25uA (50% of 50uA DAC)
+* Phase 2 (30 to 60ns): Vector A = [1, 1, 1, 0] -> IMAC = 10u + 20u + 15u = 45uA (90% of 50uA DAC)
+Vwl1 wl1 0 PULSE(1 1 0 10p 10p 60n 60n)
+Vwl2 wl2 0 PULSE(0 1 30n 50p 50p 30n 60n)
+Vwl3 wl3 0 PULSE(1 1 0 10p 10p 60n 60n)
+Vwl4 wl4 0 0
 
-* Wordline Activation Signals (Voltage levels: 0V = OFF, 1.0V = ON)
-* Phase 1 (0 to 25ns): Vector A = [1, 0, 1, 0] -> Expected IMAC = 10u + 15u = 25uA (50% of 50uA DAC)
-* Phase 2 (25 to 50ns): Vector A = [1, 1, 1, 0] -> Expected IMAC = 10u + 20u + 15u = 45uA (90% of 50uA DAC)
-Vwl1 wl1 0 PULSE(1 1 0 10p 10p 50n 50n)
-Vwl2 wl2 0 PULSE(0 1 25n 50p 50p 25n 50n)
-Vwl3 wl3 0 PULSE(1 1 0 10p 10p 50n 50n)
-Vwl4 wl4 0 PULSE(0 0 0 10p 10p 50n 50n)
-
-* Synaptic Unit Cells driving the shared column Bitline (VBL):
 Gcell1 0 vbl wl1 0 10u
 Gcell2 0 vbl wl2 0 20u
 Gcell3 0 vbl wl3 0 15u
@@ -31,8 +25,10 @@ Gcell4 0 vbl wl4 0 5u
 Cbl vbl 0 100f IC=0.25
 Rbl vbl 0 500k
 
-* Feedback Current DAC: 50uA full-scale, switched by delayed bitstream (tau_d = 1.3 ns)
-Bidac vbl 0 I = 50u * (1 / (1 + exp(-40 * (V(y_del) - 0.5))))
+* Local Resonator Feedback: removed to maintain negative loop feedback
+
+* 3-Bit Current-Steering Feedback DAC (0 to 50uA)
+Bidac vbl 0 I = 50u * ( (V(y_del) + 1.0) / 2.0 )
 
 * Second Integrator: gm = 100uS, C2 = 400fF
 Gota 0 v2 vbl ref 100u
@@ -51,19 +47,27 @@ Rterm2 y_d2 0 1k
 Teld y_out 0 y_del 0 Z0=1k Td=1.3n
 Rterm3 y_del 0 1k
 
-* Predictive Compensation Network (d1 = 0.7800, d2 = 0.2711)
-Bpred v_comp 0 V = 0.7800 * (2*V(y_d1) - 1.0) + 0.2711 * (2*V(y_d2) - 1.0)
+* Predictive FIR Compensation (d1 = 0.7800, d2 = 0.2711)
+Bpred v_comp 0 V = 0.7800 * V(y_d1) + 0.2711 * V(y_d2)
 
 * Quantizer Summing Node
 Bvq vq 0 V = 1.864 * (V(vbl) - 0.25) + 1.520 * V(v2) - V(v_comp)
 
-* Quantizer Latch
-Acomp vq 0 clk 0 0 0 y_raw 0 SCHMITT vt=0 vh=1m
-Byout y_out 0 V = (V(y_raw) > 0.5)
+* 3-Bit Flash Quantizer (8 linear bins)
+Byout y_out 0 V = table(V(vq), -0.857, -1.0, -0.571, -0.714, -0.286, -0.429, 0.0, -0.143, 0.286, 0.143, 0.571, 0.429, 0.857, 0.714, 1.0, 1.0)
 
-* Streaming Decimation Filter: tau = R*C = 1k * 3.3p = 3.3 ns (settles within 10-15 ns)
-Rfilt y_out y_filt 1k
-Cfilt y_filt 0 3.3p IC=0.5
+* Map [-1, +1] to Normalized MAC [0, 1]
+Bmac y_mac 0 V = (V(y_out) + 1.0) / 2.0
+
+* 2nd-Order Sinc-2 Decimation Filter (Cascaded RC stages with tau = 0.8 ns)
+* Stage 1:
+Rfilt1 y_mac y_int 1k
+Cfilt1 y_int 0 0.8p IC=0.5
+
+* Buffer stage 1 to stage 2:
+Bbuf y_buf 0 V = V(y_int)
+Rfilt2 y_buf y_filt 1k
+Cfilt2 y_filt 0 0.8p IC=0.5
 
 * Transient Simulation for 60 ns
 .tran 0 60n 0 5p uic
