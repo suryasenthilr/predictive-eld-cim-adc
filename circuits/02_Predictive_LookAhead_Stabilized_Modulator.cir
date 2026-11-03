@@ -1,0 +1,53 @@
+* 02_Predictive_LookAhead_Stabilized_Modulator.cir
+* Continuous-Time Delta-Sigma Modulator with Predictive Look-Ahead ELD Compensation
+* Matched to Silicon Scaled Dynamic Range (a1 = 0.5, a2 = 0.25)
+.options method=gear plotwinsize=0
+
+* Master Clock: 1.0 GHz, 50% duty cycle
+Vclk clk 0 PULSE(0 1 0 20p 20p 480p 1n)
+
+* Input Current: 25uA DC + 10uA AC (31.25 MHz)
+Iin 0 vbl SINE(25u 10u 31.25MEG)
+
+* First Integrator: C_BL = 100 fF
+Cbl vbl 0 100f IC=0.25
+Rbl vbl 0 500k
+
+* Feedback Current DAC: 50uA switched by delayed bitstream y_del (tau_d = 1.3 ns)
+Bidac vbl 0 I = 50u * (1 / (1 + exp(-40 * (V(y_del) - 0.5))))
+
+* Second Integrator: gm = 100uS, C2 = 400fF (a2 = gm*Ts/C2 = 0.25)
+Gota 0 v2 vbl ref 100u
+Vref ref 0 0.25
+C2 v2 0 400f IC=0
+Rleak2 v2 0 10MEG
+
+* Retimed Digital Shift Register for Predictive Look-Ahead
+* Tap 1: 1.0 ns delay (z^-1)
+Ttap1 y_out 0 y_d1 0 Z0=1k Td=1.0n
+Rterm1 y_d1 0 1k
+
+* Tap 2: 2.0 ns delay (z^-2)
+Ttap2 y_out 0 y_d2 0 Z0=1k Td=2.0n
+Rterm2 y_d2 0 1k
+
+* Excess Loop Delay: tau_d = 1.3 ns
+Teld y_out 0 y_del 0 Z0=1k Td=1.3n
+Rterm3 y_del 0 1k
+
+* Predictive Look-Ahead Network:
+* d1 = 0.7800, d2 = 0.2711
+Bpred v_comp 0 V = 0.7800 * (2*V(y_d1) - 1.0) + 0.2711 * (2*V(y_d2) - 1.0)
+
+* Predictive Summing Node: Vq = c1*(V(vbl) - 0.25) + c2*V(v2) - V(v_comp)
+* c1 = 1.864, c2 = 1.520
+Bvq vq 0 V = 1.864 * (V(vbl) - 0.25) + 1.520 * V(v2) - V(v_comp)
+
+* Dynamic Comparator / Latch:
+Acomp vq 0 clk 0 0 0 y_raw 0 SCHMITT vt=0 vh=1m
+Byout y_out 0 V = (V(y_raw) > 0.5)
+
+* Transient simulation with UIC
+.tran 0 50n 0 5p uic
+.save V(clk) V(vbl) V(v2) V(vq) V(v_comp) V(y_out) V(y_del)
+.end

@@ -1,0 +1,48 @@
+* 01_Uncompensated_ELD_Instability.cir
+* Continuous-Time Delta-Sigma Modulator with Excess Loop Delay = 1.3 Ts (Uncompensated)
+* Clock: 1.0 GHz (Ts = 1.0 ns), Delay: tau_d = 1.3 ns
+
+* Master Sampling Clock: 1 GHz, 50% duty cycle
+Vclk clk 0 PULSE(0 1 0 20p 20p 480p 1n)
+
+* Input Signal (Neural Activation Current): 50uA DC + 15uA AC (31.25 MHz)
+Iin 0 vbl SINE(50u 15u 31.25MEG)
+
+* First Integrator: Parasitic Bitline Capacitance C_BL
+Cbl vbl 0 100f IC=0
+
+* Bitline Leakage / DC Conductance (500k Ohm)
+Rbl vbl 0 500k
+
+* Feedback Current DAC: Switched by delayed bitstream y_del
+* Positive DAC current discharges the bitline: when y_del > 0.5, Idac = 100uA; when y_del <= 0.5, Idac = 0uA
+Bidac vbl 0 I = 100u * (1 / (1 + exp(-40 * (V(y_del) - 0.5))))
+
+* Second Integrator: Active OTA with gm = 500uS, C2 = 250fF
+* dv2/dt = gm/C2 * (V(vbl) - Vref)
+* Let Vref = 0.25V (nominal bitline bias)
+Gota 0 v2 vbl ref 500u
+Vref ref 0 0.25
+C2 v2 0 250f IC=0
+Rleak2 v2 0 10MEG
+
+* Clocked Dynamic Quantizer (Sample-and-Hold / Latch)
+* Summing node for Uncompensated: Vq = c1*(V(vbl) - 0.25) + c2*V(v2)
+* With c1 = 1.864, c2 = 1.520
+Bvq vq 0 V = 1.864 * (V(vbl) - 0.25) + 1.520 * V(v2)
+
+* Ideal clocked latch using behavioral sample-and-hold
+* Samples V(vq) on rising edge of clk, outputs y_raw in {0, 1}
+* In LTspice, a clocked D-flip-flop or comparator:
+* A-device: Schmidt trigger or Sample-and-Hold
+Acomp vq 0 clk 0 0 0 y_raw 0 SCHMITT vt=0 vh=1m
+* Buffer to clean rail: y_out = 1 if y_raw > 0.5 else 0
+Byout y_out 0 V = (V(y_raw) > 0.5)
+
+* Excess Loop Delay Block: tau_d = 1.3 ns (1.3 * Ts)
+Bdel y_del 0 V = delay(V(y_out), 1.3n)
+
+* Transient simulation for 50 ns (50 clock cycles)
+.tran 0 50n 0 5p
+.save V(clk) V(vbl) V(v2) V(vq) V(y_out) V(y_del)
+.end
