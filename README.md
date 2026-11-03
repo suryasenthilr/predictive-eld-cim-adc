@@ -262,117 +262,155 @@ All schematics are located in the `circuits/` directory and can be directly open
 
 ## Silicon Feasibility, Energy-Latency Analysis, and Non-Ideality Robustness
 
-To address the practical silicon feasibility of this continuous-time Compute-in-Memory architecture, this section provides an analytical and circuit-level investigation of the real-world non-idealities that govern mixed-signal CiM macros: integrator leakage, array scale, DAC mismatch, cell non-linearity, and comparative energy/latency trade-offs against conventional SAR ADCs.
+To establish the rigorous physical and architectural limits of this continuous-time Compute-in-Memory architecture, this section provides an analytical and circuit-level investigation of the real-world non-idealities that govern mixed-signal CiM macros: mathematical noise shaping bounds, array scale, DAC mismatch, cell non-linearity, provenance of results, and a first-principles energy/latency comparison against conventional SAR ADCs.
 
-### 1. Performance Discrepancy & Leaky Integrator Physics ($R_{BL} \parallel C_{BL}$)
+### 1. Performance Discrepancy: Mathematical Derivation vs. Controlled Experiments
 
-Textbook discrete-time 3-bit 2nd-order $\Delta\Sigma$ formulas predict an ideal SQNR of $\approx 13.4\text{ bits}$ at $\text{OSR} = 32$. However, SPICE circuit simulations yield an ENOB of $10.30\text{ bits}$ ($\text{SNDR} = 63.78\text{ dB}$), and MATLAB numerical ODE solutions yield $12.86\text{ bits}$ at $\text{OSR} = 64$. 
+Textbook formulas for an idealized second-order modulator with a pure differentiator noise transfer function ($NTF_{ideal}(z) = (1 - z^{-1})^2$, with all poles at $z=0$) predict an ideal SQNR of:
+$$
+\text{SQNR}_{ideal} = 6.02 \cdot B + 1.76 - 12.9 + 50 \log_{10}(\text{OSR}) \approx 13.35\text{ bits at OSR}=32
+$$
+However, numerical simulations yield an ENOB of $10.05\text{ to }10.30\text{ bits}$ at $\text{OSR} = 32$, and $12.53\text{ to }12.86\text{ bits}$ at $\text{OSR} = 64$. 
 
-This discrepancy stems from two distinct physical mechanisms:
+#### 1.1 The Mathematical Cause: Butterworth Denominator Noise Amplification
+To stabilize the multi-cycle excess loop delay ($\tau_d = 1.3\,T_s$), the closed-loop poles must be placed away from the origin at $z_{1,2} = 0.6100 \pm j 0.1947$ ($|z| = 0.6403$). The exact synthesized Noise Transfer Function is:
+$$
+NTF(z) = \frac{(1 - z^{-1})^2}{1 - 1.22 z^{-1} + 0.41 z^{-2}} = \frac{(1 - z^{-1})^2}{D(z)}
+$$
+At baseband frequencies ($\omega \to 0$, $z \to 1$), the denominator evaluates to:
+$$
+D(1) = 1 - 1.22 + 0.41 = 0.1900
+$$
+Because the denominator is significantly less than unity at low frequencies ($D(1) = 0.19$), the in-band quantization noise power is amplified by:
+$$
+\text{Noise Gain} = \frac{1}{|D(1)|^2} = \frac{1}{(0.19)^2} \approx 27.70 \implies \mathbf{+14.42\text{ dB}}
+$$
+Evaluating the exact numerical integral of $|NTF(e^{j\omega})|^2 \cdot \sigma_e^2$ over the signal bandwidth $[0, \pi/\text{OSR}]$ with input amplitude backoff ($A = 0.6 = -4.4\text{ dBFS}$) yields:
+- **$\text{OSR} = 32$:** Analytical $\text{SQNR} = \mathbf{62.24\text{ dB}} \implies \mathbf{10.05\text{ bits}}$ (Simulated: $10.30\text{ bits}$).
+- **$\text{OSR} = 64$:** Analytical $\text{SQNR} = \mathbf{77.20\text{ dB}} \implies \mathbf{12.53\text{ bits}}$ (Simulated: $12.86\text{ bits}$).
+- **$\text{OSR} = 128$:** Analytical $\text{SQNR} = \mathbf{92.17\text{ dB}} \implies \mathbf{15.02\text{ bits}}$ (Simulated: $15.16\text{ bits}$).
 
-1. **The Leaky Integrator Pole ($R_{BL} \parallel C_{BL}$):**
-   In an idealized integrator, the open-loop pole resides strictly at DC ($\omega = 0$). In physical CiM crossbars, the non-zero off-state and on-state resistance of unselected and selected synaptic cells presents a finite column bitline resistance ($R_{BL} \approx 500\text{ k}\Omega$). In parallel with $C_{BL} = 100\text{ fF}$, this introduces a physical leaky integrator pole at:
-   $$
-   f_p = \frac{1}{2\pi R_{BL} C_{BL}} = \frac{1}{2\pi \times (500\text{ k}\Omega) \times (100\text{ fF})} \approx 3.18\text{ MHz}
-   $$
-   Below $3.18\text{ MHz}$, the open-loop integrator gain saturates at $A_0 = g_m R_{BL}$ rather than approaching infinity. This attenuates the 2nd-order noise shaping slope at low frequencies, elevating the baseband quantization noise floor by approximately $12\text{ dB}$ ($\approx 2.0\text{ bits}$).
-2. **Predictive FIR Noise Gain & Elevated Out-of-Band Gain ($OBG$):**
-   Textbook formulas assume zero loop delay ($\tau_d = 0$). To stabilize the multi-cycle delay ($\tau_d = 1.3\,T_s$), the predictive FIR taps ($d_1 = 0.7800, d_2 = 0.2711$) inject filtered decision dither directly into the quantizer threshold. This elevates the Out-of-Band Gain ($OBG$) of the Noise Transfer Function from the typical Lee-criterion bound of $1.4\text{--}1.5$ to $OBG \approx 1.85$, increasing total integrated in-band noise folding.
-3. **SPICE Transients vs. Idealized ODEs:**
-   The SPICE netlists incorporate finite OTA transconductance ($100\,\mu\text{S}$), finite transmission line settling, and comparator switching transients, while basic ODE models assume instantaneous switching.
+**Conclusion:** The modulator operates within $0.25\text{ bits}$ of its exact mathematical theoretical limit. The $2.5\text{--}3.0\text{ bit}$ difference from textbook formula is not an unexplained loss, but the exact mathematical penalty of Butterworth pole placement required to guarantee loop stability under multi-cycle delay.
+
+#### 1.2 Controlled Experiment on Leaky Bitline Resistance ($R_{BL}$)
+To test whether finite bitline shunt resistance ($R_{BL} \parallel C_{BL}$) contributes to this performance gap, a controlled simulation experiment was executed sweeping $R_{BL}$ from ideal ($\infty$) to $100\text{ k}\Omega$ at $\text{OSR} = 32$:
+- $R_{BL} = \infty$ (Lossless Integrator): $\text{SNR} = 61.37\text{ dB}$ ($\text{ENOB} = 9.90\text{ bits}$)
+- $R_{BL} = 5.0\text{ M}\Omega$: $\text{SNR} = 61.73\text{ dB}$ ($\text{ENOB} = 9.96\text{ bits}$)
+- $R_{BL} = 1.0\text{ M}\Omega$: $\text{SNR} = 62.26\text{ dB}$ ($\text{ENOB} = 10.05\text{ bits}$)
+- $R_{BL} = 500\text{ k}\Omega$: $\text{SNR} = 61.17\text{ dB}$ ($\text{ENOB} = 9.87\text{ bits}$)
+- $R_{BL} = 200\text{ k}\Omega$: $\text{SNR} = 60.84\text{ dB}$ ($\text{ENOB} = 9.81\text{ bits}$)
+- $R_{BL} = 100\text{ k}\Omega$: $\text{SNR} = 57.37\text{ dB}$ ($\text{ENOB} = 9.24\text{ bits}$)
+
+The delta between ideal integration and $R_{BL} = 500\text{ k}\Omega$ is only **$0.03\text{ bits}$** ($0.2\text{ dB}$). Integrator leakage does not dominate until $R_{BL} < 100\text{ k}\Omega$.
 
 ---
 
-### 2. 16-Row Crossbar Benchmark: Continuous 8-Vector Streaming Readout
+### 2. Architecture Consistency & Application Scope
 
-To validate that the architecture scales beyond toy 4-row configurations and reliably processes non-stationary matrix-vector multiplication (MVM) workloads, an expanded 16-row synaptic array was implemented in [`04_CiM_16Row_Regulated_VirtualGround.asc`](file:///C:/Users/surya/OneDrive/Documents/LT_spice_cim_predictive_deltasigma/circuits/04_CiM_16Row_Regulated_VirtualGround.asc).
+The headline concept of this project is *co-opting the parasitic bitline capacitance ($C_{BL}$) as the continuous-time first integrator*. To ensure technical integrity, the exact silicon boundary conditions where this concept holds must be delineated:
 
-The benchmark executes an 8-vector continuous inference stream ($15\text{ ns}$ cycle time per vector, $120\text{ ns}$ total transient) across conductances spanning $6\,\mu\text{S}$ to $22\,\mu\text{S}$, generating dynamic MVM target currents from $23\,\mu\text{A}$ ($46\%$ full-scale) to $46\,\mu\text{A}$ ($92\%$ full-scale).
+1. **Transistor-Based CiM (SRAM / FeFET in Saturation):**
+   In 6T/8T SRAM or FeFET CiM arrays, synaptic multiplication occurs through transistors biased in the **saturation region** ($V_{DS} > V_{GS} - V_{th}$). Because saturation drain current is first-order independent of $V_{DS}$, the column bitline voltage $V_{BL}$ can swing by $\pm 200\text{--}300\text{ mV}$ without modulating cell currents. In this regime, **direct $C_{BL}$ parasitic integration applies perfectly with zero hardware overhead**.
+2. **Resistive / Memristive Crossbars (ReRAM / PCM):**
+   In passive memristive crossbars, conductance is ohmic ($I_{cell} = G_{cell} (V_{WL} - V_{BL})$). If $V_{BL}$ swings freely by $\pm 350\text{ mV}$, the synaptic current is modulated by $\pm 35\text{--}40\%$, corrupting MVM dot-product linearity. For these arrays, direct $C_{BL}$ integration cannot be used unbuffered; an **active regulated virtual-ground current conveyor** ($R_{in} \approx 10\,\Omega$) must clamp $V_{BL} \approx 0\text{ V}$ and convey the current to an integration node $C_{int}$.
+
+---
+
+### 3. 16-Row Crossbar Benchmark: Readout Error vs. Conversion Latency
+
+To evaluate continuous tracking across dynamic MVM workloads, a 16-row crossbar with an active virtual-ground clamp was simulated in [`circuits/04_CiM_16Row_Regulated_VirtualGround.cir`](file:///C:/Users/surya/OneDrive/Documents/LT_spice_cim_predictive_deltasigma/circuits/04_CiM_16Row_Regulated_VirtualGround.cir) across an 8-vector sequence ($120\text{ ns}$ total transient):
 
 ![16-Row Streaming MVM Readout with Regulated Virtual Ground](docs/images/fig6_16row_streaming_mvm_readout.png)
 
-#### Key Circuit Findings:
-- **Zero-Reset Continuous Accumulation:** The modulator tracks arbitrary step transitions (e.g., Vector 4 at $0.84 \to$ Vector 5 at $0.52 \to$ Vector 6 at $0.86$) seamlessly without discharging or resetting the column bitline capacitance.
-- **Headroom Containment:** Across all 8 vector boundaries, internal integrator states remain strictly bound: $V_{int} \in [-0.314\text{ V}, +0.927\text{ V}]$ and $V_2 \in [-0.186\text{ V}, +1.433\text{ V}]$, preventing integrator rail-locking under multi-cycle delay.
+#### 3.1 Clamping Performance:
+The regulated clamp maintains the physical bitline node within $|V_{BL}| \le 0.459\text{ mV}$ ($< 0.05\%$ of the $1.0\text{ V}$ supply), eliminating synaptic current modulation.
+
+#### 3.2 Measured Readout Error per Vector at $15\text{ ns}$ Cycle Time:
+- **Vector 1 (Target = 0.8200):** Measured = $0.8725$ (Rel Error = $6.40\%$)
+- **Vector 2 (Target = 0.6600):** Measured = $0.6059$ (Rel Error = $8.19\%$)
+- **Vector 3 (Target = 0.5600):** Measured = $0.5339$ (Rel Error = $4.66\%$)
+- **Vector 4 (Target = 0.8400):** Measured = $0.8809$ (Rel Error = $4.86\%$)
+- **Vector 5 (Target = 0.5200):** Measured = $0.4347$ (Rel Error = $16.41\%$)
+- **Vector 6 (Target = 0.8600):** Measured = $0.9141$ (Rel Error = $6.29\%$)
+- **Vector 7 (Target = 0.4600):** Measured = $0.3575$ (Rel Error = $22.29\%$)
+- **Vector 8 (Target = 0.9200):** Measured = $1.0000$ (Rel Error = $8.69\%$)
+- **Average Vector Readout Error:** **$9.73\%$** ($\text{ENOB} \approx 3.4\text{ bits}$).
+
+#### 3.3 Real Independent Throughput vs. Latency:
+A 2nd-order $\Delta\Sigma$ modulator and Sinc-2 decimation filter cannot achieve 10-bit resolution in $15\text{ ns}$ ($OSR = 15$). The effective resolution scales strictly with conversion time:
+- **High-Speed / Low-Precision ($15\text{ ns}$ window):** Throughput = **$66.7\text{ MS/s}$**, Resolution = **$\approx 3.5\text{--}4.5\text{ bits}$** ($9.7\%$ avg error).
+- **Medium-Precision ($32\text{ ns}$ window, $\text{OSR}=32$):** Throughput = **$31.25\text{ MS/s}$**, Resolution = **$10.05\text{ bits}$** ($< 0.1\%$ error).
+- **High-Precision ($64\text{ ns}$ window, $\text{OSR}=64$):** Throughput = **$15.625\text{ MS/s}$**, Resolution = **$12.53\text{ bits}$**.
 
 ---
 
-### 3. Non-Idealities, PVT Tolerance, and DAC Mismatch
+### 4. Non-Idealities, PVT Tolerance, and DAC Mismatch
 
-Real-world silicon implementations must withstand device mismatch, voltage modulation, and delay variations. Figure 5 presents a comprehensive parametric sensitivity analysis.
+Figure 5 details parametric sensitivity, Monte Carlo unit DAC mismatch, and stability margins:
 
 ![Sensitivity, PVT Mismatch, and Silicon Feasibility Analysis](docs/images/fig5_sensitivity_and_pvt_mismatch.png)
 
-#### 3.1 Bitline Voltage Modulation of Synaptic Current
-Ohm's law in neuromorphic crossbars ($I_{cell} = G_{cell} \cdot V_{WL}$) assumes the bitline node is pinned to a fixed potential ($V_{BL} \approx 0\text{ V}$). In an unregulated architecture, $V_{BL}$ swings by $\pm 350\text{ mV}$, causing the effective cell drop $(V_{WL} - V_{BL})$ to modulate synaptic currents by up to $\pm 35\text{--}40\%$, producing severe dot-product distortion (Figure 5d).
-- **The Solution:** The regulated virtual-ground clamp in [`04_CiM_16Row_Regulated_VirtualGround.cir`](file:///C:/Users/surya/OneDrive/Documents/LT_spice_cim_predictive_deltasigma/circuits/04_CiM_16Row_Regulated_VirtualGround.cir) presents an effective input impedance of $R_{in} \approx 10\,\Omega$. As shown in Figure 6b, the bitline swing is strictly clamped to:
-  $$
-  |V_{BL}| \le 0.459\text{ mV}
-  $$
-  This suppresses synaptic current modulation error to $< 0.05\%$, preserving true linear dot-product physics.
+#### 4.1 Stability Window:
+The closed-loop system is **conditionally stable**, requiring input amplitudes $A \le -4.4\text{ dBFS}$ ($0.60\text{ V}$) to avoid quantizer overload. Under fixed predictive coefficients ($d_1 = 0.7800, d_2 = 0.2711$), loop stability ($|z|_{max} \le 0.85$) is maintained over an excess delay window of:
+$$
+\tau_d \in [1.18\,T_s, 1.42\,T_s] \quad (\pm 100\text{ ps or } \pm 15\% \text{ delay tolerance})
+$$
+Beyond this window, adaptive LMS background coefficient calibration is required.
 
-#### 3.2 3-Bit DAC Unit Element Mismatch and Data Weighted Averaging (DWA)
-Multi-bit feedback DACs are sensitive to unit current cell mismatch ($\sigma_{\Delta I / I}$). Random threshold and sizing variations inject static integral non-linearity (INL) directly into the modulator input without noise shaping.
-- **Without Calibration:** At $\sigma = 1.0\%$, unshaped mismatch degrades ENOB from $10.8\text{ bits}$ down to $8.4\text{ bits}$ (Figure 5c).
-- **With 1st-Order DWA:** Data Weighted Averaging dynamically rotates unit current elements across clock cycles, high-pass shaping the DAC mismatch:
-  $$
-  S_{DAC, DWA}(f) \approx S_{DAC, raw}(f) \cdot \frac{1}{3}\left(\frac{\pi}{\text{OSR}}\right)^2
-  $$
-  At $\text{OSR} = 64$, DWA suppresses DAC mismatch by $> 30\text{ dB}$, maintaining an ENOB $> 10.5\text{ bits}$ even under $2.0\%$ unit element variation.
-
-#### 3.3 Excess Loop Delay (ELD) Mismatch Robustness
-Across PVT corners, comparator delay $\tau_d$ can drift by $\pm 15\text{--}25\%$. As plotted in Figure 5a-b:
-- For delays ranging from $\tau_d = 1.18\,T_s$ to $1.42\,T_s$ ($\pm 100\text{ ps}$ at $1\text{ GHz}$), the dominant closed-loop pole remains within $|z|_{max} \le 0.85 < 1.0$, proving unconditional loop stability without requiring real-time coefficient retuning.
-- For wider variations ($\tau_d > 1.5\,T_s$ or $\tau_d < 1.1\,T_s$), a digital background LMS calibration engine can adaptively tune $d_1$ and $d_2$ to recenter the closed-loop poles at $|z| = 0.6403$.
+#### 4.2 3-Bit DAC Unit Element Mismatch:
+Without calibration, static current mismatch ($\sigma_{\Delta I / I} = 1.0\%$) degrades ENOB from $10.8\text{ bits}$ to $8.4\text{ bits}$. Implementing 1st-order Data Weighted Averaging (DWA) first-order shapes the mismatch, restoring ENOB to $> 10.5\text{ bits}$.
 
 ---
 
-### 4. Rigorous Energy-per-MVM and Latency Trade-Off: CT-DSM vs. SAR vs. I-DSM
+### 5. Energy-per-MVM and Latency First-Principles Derivation
 
-A fundamental question for Compute-in-Memory readouts is whether continuous-time $\Delta\Sigma$ actually beats Successive Approximation Register (SAR) ADCs once active modulator power and conversion latency are accounted for.
+A rigorous first-principles derivation confirms the exact energy and latency trade-off between Continuous-Time $\Delta\Sigma$ and standard Nyquist SAR ADCs:
 
-#### 4.1 Energy per MVM Conversion ($E_{MVM}$)
+#### 5.1 Real Low-Swing CiM SAR ADC Baseline (8-Bit):
+In practical CiM macros, column bitlines do not swing rail-to-rail; they discharge across a small sensing window $\Delta V_{BL} \approx 200\text{ mV}$ ($V_{DD} = 1.0\text{ V}, C_{BL} = 100\text{ fF}$):
+- Bitline discharge energy: $E_{BL} = C_{BL} \cdot V_{DD} \cdot \Delta V_{BL} = 100\text{ fF} \times 1.0\text{ V} \times 0.2\text{ V} = \mathbf{20\text{ fJ}}$.
+- 8-bit asynchronous SAR conversion energy ($15\text{ fJ/step}$ Walden FoM): $E_{SAR} \approx \mathbf{30\text{ fJ}}$.
+- **Total SAR Energy per MVM:** $E_{MVM, SAR} \approx \mathbf{50\text{ fJ / vector}}$ at **$8\text{ ns}$ latency** ($7.5\text{ bits}$ ENOB).
 
-1. **Nyquist SAR ADC (8--10 Bits):**
-   In a conventional SAR-based CiM macro, the column bitline capacitance $C_{BL}$ must be charged and discharged every vector cycle:
-   $$
-   E_{MVM, SAR} = \frac{1}{2} C_{BL} V_{DD}^2 + E_{CDAC} + N \cdot E_{comp}
-   $$
-   For a dense array ($C_{BL} = 200\text{ fF}, V_{DD} = 1.0\text{ V}$), bitline reset alone consumes $E_{reset} = 100\text{ fJ}$. Adding $N = 8$ capacitive DAC cycles ($32\text{ fJ}$) and comparator latch energy ($40\text{ fJ}$):
-   $$
-   E_{MVM, SAR} \approx 100\text{ fJ} + 32\text{ fJ} + 40\text{ fJ} = \mathbf{172\text{ fJ / conversion}}
-   $$
-2. **Switched-Capacitor Incremental $\Delta\Sigma$ (I-DSM):**
-   I-DSMs reset both the bitline and internal integration capacitors every conversion, requiring $2^N$ or $2^{N/2}$ clock cycles with active OTA current:
-   $$
-   E_{MVM, IDSM} = \frac{1}{2} C_{BL} V_{DD}^2 + \int_0^{T_{conv}} P_{OTA}\,dt + M \cdot E_{comp} \approx \mathbf{1\text{--}5\text{ pJ / conversion}}
-   $$
-3. **Continuous-Time Zero-Reset $\Delta\Sigma$ (This Architecture):**
-   Because $C_{BL}$ is directly embedded as the continuous-time first integrator, the bitline is **never discharged or reset** ($E_{reset} \equiv 0\text{ fJ}$).
-   Total active power at $1.0\text{ GHz}$:
-   - Regulated current buffer (Integrator 1): $40\,\mu\text{W}$
-   - Active OTA (Integrator 2): $30\,\mu\text{W}$
-   - 3-bit Flash (7 dynamic latches at $1\text{ GHz}$): $105\,\mu\text{W}$
-   - 3-bit current-steering DAC: $50\,\mu\text{W}$
-   - Total Modulator Power: $P_{CTDSM} \approx 225\,\mu\text{W}$
-   
-   Conversion energy for an $\text{OSR} = 32$ window ($T_{conv} = 32\text{ ns}$):
-   $$
-   E_{MVM, CTDSM} = P_{CTDSM} \times (OSR \cdot T_s) = 225\,\mu\text{W} \times 32\text{ ns} = \mathbf{72\text{ fJ / conversion}}
-   $$
-   **Energy Reduction:** At $C_{BL} = 200\text{ fF}$, the continuous-time zero-reset architecture provides a **$58\%$ reduction in total conversion energy** compared to a SAR ADC ($72\text{ fJ}$ vs. $172\text{ fJ}$).
+#### 5.2 1.0 GHz Continuous-Time $\Delta\Sigma$ Readout (This Work):
+Total active power consumption at $1.0\text{ GHz}$:
+- Integrator 2 (OTA): $30\,\mu\text{W}$
+- 3-bit Flash Quantizer (7 StrongARM latches clocked at $1\text{ GHz}$): $140\,\mu\text{W}$
+- 3-bit current-steering DAC: $25\,\mu\text{W}$
+- Digital decimation filter: $30\,\mu\text{W}$
+- Regulated clamp (for resistive crossbars): $100\,\mu\text{W}$
+- **Total Power:** $P_{CTDSM} = 225\,\mu\text{W}$ (Direct $C_{BL}$) to $325\,\mu\text{W}$ (with Active Clamp).
 
-#### 4.2 The Architectural Crossover Boundary
-Setting $E_{MVM, CTDSM} \le E_{MVM, SAR}$ yields the minimum bitline capacitance required for CT-DSM energy superiority:
-$$
-C_{BL} \ge \frac{2 \left[ P_{CTDSM} \cdot (OSR \cdot T_s) - (E_{CDAC} + N \cdot E_{comp}) \right]}{V_{DD}^2}
-$$
-- **Small crossbars ($C_{BL} < 80\text{ fF}$):** SAR ADCs win on energy because the precharge energy penalty is negligible ($< 40\text{ fJ}$).
-- **Dense, long-bitline crossbars ($C_{BL} \ge 150\text{--}500\text{ fF}$):** Continuous-time $\Delta\Sigma$ wins decisively because bitline precharging dominates the SAR power budget.
+**Energy per Conversion Window ($T_{conv} = \text{OSR} \cdot T_s$):**
+- At $\text{OSR} = 32$ ($32\text{ ns}$ latency, $10.05\text{ bits}$):
+  $$
+  E_{MVM, CTDSM} = 225\,\mu\text{W} \times 32\text{ ns} = \mathbf{7.20\text{ pJ}} = \mathbf{7200\text{ fJ / conversion}}
+  $$
+- At $\text{OSR} = 15$ ($15\text{ ns}$ latency, $3.5\text{ bits}$):
+  $$
+  E_{MVM, CTDSM} = 225\,\mu\text{W} \times 15\text{ ns} = \mathbf{3.38\text{ pJ}} = \mathbf{3375\text{ fJ / conversion}}
+  $$
 
-#### 4.3 Latency Reality Check
-- **Isolated Single-Shot Vector:** SAR ADCs complete a conversion in $2\text{--}8\text{ ns}$, whereas CT-$\Delta\Sigma$ ($\text{OSR} = 32$) requires $32\text{ ns}$ ($4\times$ slower latency for an isolated conversion).
-- **Streaming Temporal Workloads (Edge Audio, Radar, Continuous Video):** In temporal streaming inference, the continuous-time modulator functions as a seamless running accumulator. Reconstructed digital outputs stream continuously at the clock rate via decimation filtering, completely eliminating inter-vector settling and reset latency.
+#### 5.3 The Honest Trade-Off:
+- **Energy:** The 1 GHz CT-$\Delta\Sigma$ burns **$144\times$ more energy per conversion** than an 8-bit SAR ADC ($7.2\text{ pJ}$ vs. $50\text{ fJ}$).
+- **Latency:** The CT-$\Delta\Sigma$ is **$4\times$ slower** than a SAR ADC for single-vector conversions ($32\text{ ns}$ vs. $8\text{ ns}$).
+- **Why Choose CT-$\Delta\Sigma$?** 
+  SAR ADCs in dense CiM macros face a hard physical noise and mismatch wall at $6\text{--}8\text{ bits}$ ($kT/C$ sampling noise, kickback, capacitor mismatch). 
+  Continuous-Time $\Delta\Sigma$ is **not a low-energy replacement for low-precision 8-bit SARs**; it is a **high-precision ($10\text{ to }13\text{ bits}$) mixed-signal architecture** offering continuous anti-aliasing filtering and zero discrete bitline sampling noise for scientific computing, analog signal processing, and medical edge inference where SAR resolution is insufficient.
+
+---
+
+### 6. Provenance of Results
+
+| Result / Claim | Source Platform | Model Type | Parameters / Setup |
+| :--- | :--- | :--- | :--- |
+| **Exact Predictive Taps ($d_1=0.78, d_2=0.2711$)** | Python (`scripts/01`) | Closed-Form Discrete-Time Math | Modified $Z$-Transform, $\beta = 0.3$, cancellation error $< 2.3 \times 10^{-16}$ |
+| **Analytical Noise Shaping ($10.05\text{b}$ at OSR 32)** | Python (`scripts/04`) | Exact Frequency-Domain Integration | $\int |NTF(e^{j\omega})|^2 d\omega$ including $D(1)=0.19$ amplification |
+| **Noise Shaping Spectrum & ENOB ($10.3\text{--}13.0\text{b}$)** | Python / MATLAB (`scripts/03`, `.m`) | Behavioral Continuous-Time ODE | Runge-Kutta / sub-stepping ODE, $N = 18432$, coherent Blackman FFT |
+| **Uncompensated Instability ($\pm 41\text{V}$)** | LTspice 26.1.1 (`circuits/01`) | SPICE Transient Netlist | Transmission line delay $\tau_d = 1.3\text{ns}$, 50 ns run |
+| **Compensated Linear Headroom ($V_{BL} \in [-0.37, 0.90\text{V}]$)**| LTspice 26.1.1 (`circuits/02`) | SPICE Transient Netlist | 3-bit Flash table quantizer, transmission lines, 50 ns run |
+| **16-Row Crossbar Clamping ($|V_{BL}| \le 0.46\text{mV}$)** | LTspice 26.1.1 (`circuits/04`) | SPICE Transient Netlist | 16 synaptic conductances, active clamp, 120 ns 8-vector run |
+| **15 ns Vector Readout Error ($9.7\%$ avg)** | LTspice 26.1.1 (`circuits/04`) | SPICE Transient Netlist | Sinc-2 decimation filter output evaluated at $t = k \cdot 15\text{ ns}$ |
 
 ---
 
@@ -415,15 +453,16 @@ $$
 
 ## Novelty and Prior Art Comparison
 
-| Metric / Feature | Classical CT-DSM (Pavan / Schreier) | Compute-in-Memory I-DSM (Standard CiM) | This Work (Upgraded 3-Bit CT-DSM) |
+| Metric / Feature | Classical CT-DSM (Pavan / Schreier) | Compute-in-Memory SAR (Standard CiM) | This Work (Upgraded 3-Bit CT-DSM) |
 | :--- | :--- | :--- | :--- |
-| **Excess Loop Delay Limit** | $\tau_d < 1.0\,T_s$ | N/A (Switched-Capacitor) | **$\tau_d = 1.3\,T_s$ ($> 1\,T_s$)** |
-| **First Integrator Implementation** | Dedicated active RC / $g_m-C$ op-amp | Switched-capacitor array | **Direct co-opt of bitline parasitics ($C_{BL}$)** |
-| **Bitline Reset Requirement** | N/A | Full discharge every vector | **Zero-reset continuous streaming** |
-| **MVM Readout Latency** | N/A | Reset time + $N$ clock cycles | **Continuous sample-by-sample tracking** |
-| **Precharge Energy Overhead** | N/A | High ($\frac{1}{2} C_{BL} V_{DD}^2 f_{MVM}$) | **Zero ($0\text{ fJ/vector}$ bitline reset energy)** |
-| **Achieved Resolution** | $10\text{ to }14\text{ bits}$ | $4\text{ to }8\text{ bits}$ | **$10.3\text{ bits}$ (OSR=32) to $13.0\text{ bits}$ (OSR=128)** |
-| **MVM Readout Linearity** | Non-linear settling | Truncated integration | **$99.8\%$ linear accuracy ($0.898\text{V}$ for $0.900\text{V}$ target)** |
+| **Excess Loop Delay Limit** | $\tau_d < 1.0\,T_s$ | N/A (Nyquist SAR) | **$\tau_d = 1.3\,T_s$ ($> 1\,T_s$)** |
+| **First Integrator Implementation** | Dedicated active RC / $g_m-C$ op-amp | N/A (Capacitive DAC / Comparator) | **Bitline capacitance ($C_{BL}$) co-optation** |
+| **Bitline Reset Requirement** | N/A | Periodic reset / precharge per vector | **Zero-reset continuous integration** |
+| **Energy per Conversion** | $5\text{ to }20\text{ pJ}$ | **$\approx 50\text{ fJ}$** (Low-swing $200\text{mV}$) | **$7.2\text{ pJ}$ ($\text{OSR}=32$) / $3.38\text{ pJ}$ ($\text{OSR}=15$)** |
+| **Conversion Latency** | Continuous bandwidth | **$5\text{ to }10\text{ ns}$** | **$15\text{ ns}$ ($3.5\text{b}$) / $32\text{ ns}$ ($10.0\text{b}$) / $64\text{ ns}$ ($12.5\text{b}$)** |
+| **Achieved Resolution** | $10\text{ to }14\text{ bits}$ | $6\text{ to }8\text{ bits}$ (Noise/mismatch wall) | **$10.05\text{b}$ (OSR=32) to $12.53\text{b}$ (OSR=64)** |
+| **Readout Error** | N/A | $1\text{ to }3\%$ (8-bit quantization) | **$9.7\%$ avg (15 ns streaming) / $< 0.1\%$ (settled)** |
+| **Anti-Aliasing / Filtering** | Built-in continuous filter | None (Requires discrete settling) | **Inherent continuous-time noise shaping** |
 
 ---
 
