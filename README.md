@@ -264,15 +264,20 @@ All schematics are located in the `circuits/` directory and can be directly open
 
 ### Running Batch Simulations and Analysis
 
-1. **Derive Analytical Coefficients and Closed-Loop Poles:**
+1. **Native MATLAB R2026b Full Verification:**
+   ```powershell
+   cd scripts
+   matlab -batch "matlab_predictive_ctdsm_verification"
+   ```
+2. **Derive Analytical Coefficients and Closed-Loop Poles (Python):**
    ```powershell
    python scripts/01_exact_eld_derivation.py
    ```
-2. **Execute All LTspice Batch Simulations:**
+3. **Execute All LTspice Batch Simulations:**
    ```powershell
    python scripts/02_run_ltspice_simulations.py
    ```
-3. **Generate Publication-Quality Figures:**
+4. **Generate Publication-Quality Figures:**
    ```powershell
    python scripts/03_generate_publication_figures.py
    ```
