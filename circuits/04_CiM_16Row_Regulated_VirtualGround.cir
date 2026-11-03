@@ -1,0 +1,107 @@
+* 04_CiM_16Row_Regulated_VirtualGround.cir
+* Compute-in-Memory 16-Row Crossbar with Regulated Virtual-Ground Readout & 8-Vector Streaming Predictive CT-DSM
+* Eliminates V_BL modulation and evaluates continuous MVM tracking across an 8-vector sequence
+.options method=gear plotwinsize=0
+
+* 1.0 GHz Master Clock (Ts = 1.0 ns)
+Vclk clk 0 PULSE(0 1 0 20p 20p 480p 1n)
+
+* ===== 16-ROW SYNAPTIC CROSSBAR INPUT WORDLINES (8 CONSECUTIVE VECTORS OF 15ns EACH) =====
+* Conductances (uS): G = [12, 8, 15, 20, 10, 14, 18, 6, 22, 16, 9, 11, 17, 13, 7, 19]
+* Vector 1 (0-15n):   [1,0,1,0, 0,1,0,0, 0,0,0,0, 0,0,0,0] -> IMAC = 41uA (Target = 0.82)
+* Vector 2 (15-30n):  [0,1,0,0, 1,0,0,1, 0,0,1,0, 0,0,0,0] -> IMAC = 33uA (Target = 0.66)
+* Vector 3 (30-45n):  [1,0,0,0, 0,0,0,0, 0,1,0,0, 0,0,0,0] -> IMAC = 28uA (Target = 0.56)
+* Vector 4 (45-60n):  [0,0,0,1, 0,0,0,0, 1,0,0,0, 0,0,0,0] -> IMAC = 42uA (Target = 0.84)
+* Vector 5 (60-75n):  [0,0,1,0, 0,0,0,0, 0,0,0,1, 0,0,0,0] -> IMAC = 26uA (Target = 0.52)
+* Vector 6 (75-90n):  [0,1,0,0, 0,0,1,0, 0,0,0,0, 1,0,0,0] -> IMAC = 43uA (Target = 0.86)
+* Vector 7 (90-105n): [0,0,0,0, 1,0,0,0, 0,0,0,0, 0,1,0,0] -> IMAC = 23uA (Target = 0.46)
+* Vector 8 (105-120n):[0,0,0,0, 0,1,0,1, 0,0,0,0, 0,0,1,1] -> IMAC = 46uA (Target = 0.92)
+
+Vwl0  wl0  0 PWL(0 1 14.9n 1 15.0n 0 29.9n 0 30.0n 1 44.9n 1 45.0n 0 120n 0)
+Vwl1  wl1  0 PWL(0 0 14.9n 0 15.0n 1 29.9n 1 30.0n 0 74.9n 0 75.0n 1 89.9n 1 90.0n 0 120n 0)
+Vwl2  wl2  0 PWL(0 1 14.9n 1 15.0n 0 59.9n 0 60.0n 1 74.9n 1 75.0n 0 120n 0)
+Vwl3  wl3  0 PWL(0 0 44.9n 0 45.0n 1 59.9n 1 60.0n 0 120n 0)
+Vwl4  wl4  0 PWL(0 0 14.9n 0 15.0n 1 29.9n 1 30.0n 0 89.9n 0 90.0n 1 104.9n 1 105.0n 0 120n 0)
+Vwl5  wl5  0 PWL(0 1 14.9n 1 15.0n 0 104.9n 0 105.0n 1 120n 1)
+Vwl6  wl6  0 PWL(0 0 74.9n 0 75.0n 1 89.9n 1 90.0n 0 120n 0)
+Vwl7  wl7  0 PWL(0 0 14.9n 0 15.0n 1 29.9n 1 30.0n 0 104.9n 0 105.0n 1 120n 1)
+Vwl8  wl8  0 PWL(0 0 44.9n 0 45.0n 1 59.9n 1 60.0n 0 120n 0)
+Vwl9  wl9  0 PWL(0 0 29.9n 0 30.0n 1 44.9n 1 45.0n 0 120n 0)
+Vwl10 wl10 0 PWL(0 0 14.9n 0 15.0n 1 29.9n 1 30.0n 0 120n 0)
+Vwl11 wl11 0 PWL(0 0 59.9n 0 60.0n 1 74.9n 1 75.0n 0 120n 0)
+Vwl12 wl12 0 PWL(0 0 74.9n 0 75.0n 1 89.9n 1 90.0n 0 120n 0)
+Vwl13 wl13 0 PWL(0 0 89.9n 0 90.0n 1 104.9n 1 105.0n 0 120n 0)
+Vwl14 wl14 0 PWL(0 0 104.9n 0 105.0n 1 120n 1)
+Vwl15 wl15 0 PWL(0 0 104.9n 0 105.0n 1 120n 1)
+
+* Synaptic Conductances with Physical V_BL Modulation: I_syn = G * (V_WL - V_BL)
+Bcell0  wl0  vbl I = 12u * (V(wl0)  - V(vbl))
+Bcell1  wl1  vbl I =  8u * (V(wl1)  - V(vbl))
+Bcell2  wl2  vbl I = 15u * (V(wl2)  - V(vbl))
+Bcell3  wl3  vbl I = 20u * (V(wl3)  - V(vbl))
+Bcell4  wl4  vbl I = 10u * (V(wl4)  - V(vbl))
+Bcell5  wl5  vbl I = 14u * (V(wl5)  - V(vbl))
+Bcell6  wl6  vbl I = 18u * (V(wl6)  - V(vbl))
+Bcell7  wl7  vbl I =  6u * (V(wl7)  - V(vbl))
+Bcell8  wl8  vbl I = 22u * (V(wl8)  - V(vbl))
+Bcell9  wl9  vbl I = 16u * (V(wl9)  - V(vbl))
+Bcell10 wl10 vbl I =  9u * (V(wl10) - V(vbl))
+Bcell11 wl11 vbl I = 11u * (V(wl11) - V(vbl))
+Bcell12 wl12 vbl I = 17u * (V(wl12) - V(vbl))
+Bcell13 wl13 vbl I = 13u * (V(wl13) - V(vbl))
+Bcell14 wl14 vbl I =  7u * (V(wl14) - V(vbl))
+Bcell15 wl15 vbl I = 19u * (V(wl15) - V(vbl))
+
+* Active Regulated Virtual-Ground Current Conveyor Clamp:
+* Clamps V(vbl) near 0.0V (R_in = 10 Ohms) and steers continuous current to vint
+Bconvey 0 vint I = V(vbl) / 10
+Rclamp vbl 0 10
+
+* Parasitic Bitline Capacitance: CBL = 100 fF
+Cbl_par vbl 0 100f
+
+* Readout Integration Node: Cint = 100 fF
+Cint vint 0 100f IC=0.25
+Rleak vint 0 500k
+
+* 3-Bit Current-Steering Feedback DAC (0 to 50uA)
+Bidac vint 0 I = 50u * ( (V(y_del) + 1.0) / 2.0 )
+
+* Second Integrator: Active OTA (gm = 100uS, C2 = 400fF)
+Gota 0 v2 vint ref 100u
+Vref ref 0 0.25
+C2 v2 0 400f IC=0
+Rleak2 v2 0 10MEG
+
+* Excess Loop Delay: tau_d = 1.3 ns
+Teld y_out 0 y_del 0 Z0=1k Td=1.3n
+Rterm3 y_del 0 1k
+
+* Predictive Shift Register Taps (Td = 1.0ns and 2.0ns)
+Ttap1 y_out 0 y_d1 0 Z0=1k Td=1.0n
+Rterm1 y_d1 0 1k
+Ttap2 y_out 0 y_d2 0 Z0=1k Td=2.0n
+Rterm2 y_d2 0 1k
+
+* Predictive FIR Compensation Network (d1 = 0.7800, d2 = 0.2711)
+Bpred v_comp 0 V = 0.7800 * V(y_d1) + 0.2711 * V(y_d2)
+
+* Quantizer Summing Node
+Bvq vq 0 V = 1.864 * (V(vint) - 0.25) + 1.520 * V(v2) - V(v_comp)
+
+* 3-Bit Flash Quantizer (8 Linear Levels)
+Byout y_out 0 V = table(V(vq), -0.857, -1.0, -0.571, -0.714, -0.286, -0.429, 0.0, -0.143, 0.286, 0.143, 0.571, 0.429, 0.857, 0.714, 1.0, 1.0)
+
+* Map [-1, +1] to Normalized MAC Code [0, 1]
+Bmac y_mac 0 V = (V(y_out) + 1.0) / 2.0
+
+* 2nd-Order Sinc-2 Decimation Filter (Cascaded RC with tau = 0.8 ns)
+Rfilt1 y_mac y_int 1k
+Cfilt1 y_int 0 0.8p IC=0.82
+Bbuf y_buf 0 V = V(y_int)
+Rfilt2 y_buf y_filt 1k
+Cfilt2 y_filt 0 0.8p IC=0.82
+
+.tran 0 120n 0 5p uic
+.save V(clk) V(vbl) V(vint) V(v2) V(vq) V(y_out) V(y_filt)
+.end

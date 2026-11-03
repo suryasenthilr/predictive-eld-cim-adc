@@ -50,9 +50,10 @@ def read_ltspice_raw(raw_path):
     
     return variables, parsed_array
 
-vars, data = read_ltspice_raw("c:/Users/surya/OneDrive/Documents/LT_spice_cim_predictive_deltasigma/circuits/01_Uncompensated_ELD_Instability.raw")
-print("\nVariables list:", vars)
-print(f"Time: {data['time'][0]*1e9:.2f} ns to {data['time'][-1]*1e9:.2f} ns ({len(data)} steps)")
-print(f"V(vbl) Min: {np.min(data['V(vbl)']):.4f} V, Max: {np.max(data['V(vbl)']):.4f} V")
-print(f"V(v2)  Min: {np.min(data['V(v2)']):.4f} V, Max: {np.max(data['V(v2)']):.4f} V")
-print(f"V(vq)  Min: {np.min(data['V(vq)']):.4f} V, Max: {np.max(data['V(vq)']):.4f} V")
+if __name__ == '__main__':
+    vars, data = read_ltspice_raw("c:/Users/surya/OneDrive/Documents/LT_spice_cim_predictive_deltasigma/circuits/01_Uncompensated_ELD_Instability.raw")
+    print("\nVariables list:", vars)
+    print(f"Time: {data['time'][0]*1e9:.2f} ns to {data['time'][-1]*1e9:.2f} ns ({len(data)} steps)")
+    print(f"V(vbl) Min: {np.min(data['V(vbl)']):.4f} V, Max: {np.max(data['V(vbl)']):.4f} V")
+    print(f"V(v2)  Min: {np.min(data['V(v2)']):.4f} V, Max: {np.max(data['V(v2)']):.4f} V")
+    print(f"V(vq)  Min: {np.min(data['V(vq)']):.4f} V, Max: {np.max(data['V(vq)']):.4f} V")
