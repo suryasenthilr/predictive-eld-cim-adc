@@ -81,7 +81,9 @@ We derive an exact Discrete-Time Equivalent (Modified $Z$-Transform) Look-Ahead 
 
 In a continuous-time delta-sigma modulator, the loop filter transfer function is mapped to an equivalent discrete-time prototype $H(z)$ via the impulse-invariant transformation:
 
-$$H(z) = \mathcal{Z} \left\{ \left. \mathcal{L}^{-1} \left[ H(s) \cdot R_{DAC}(s) \right] \right|_{t = n T_s} \right\}$$
+$$
+H(z) = \mathcal{Z} \left[ \left. \mathcal{L}^{-1} \left( H(s) \cdot R_{DAC}(s) \right) \right|_{t = n T_s} \right]
+$$
 
 where $R_{DAC}(s)$ represents the Laplace transform of the DAC pulse. For a non-return-to-zero (NRZ) DAC with excess delay $\tau_d = (1 + \beta)T_s$ ($0 < \beta < 1$), the feedback pulse corresponding to a bit decision at $t = 0$ is delayed past the first clock period:
 
